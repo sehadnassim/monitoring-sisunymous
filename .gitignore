@@ -1,0 +1,8 @@
+inbox/
+release/
+data/
+.env
+.venv/
+__pycache__/
+.DS_Store
+*.pyc

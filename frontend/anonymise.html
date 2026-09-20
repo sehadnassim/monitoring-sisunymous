@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Anonymise · Monitoring</title>
+<meta http-equiv="Cache-Control" content="no-store" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/styles.css?v=ui32" />
+</head>
+<body class="page">
+<header class="top">
+  <div class="brand">
+    <p class="k">Monitoring · SisuNymous</p>
+    <h1>Anonymise</h1>
+    <p class="sub">EDPB 02/2026 tests on a file you upload on the desk. Empty until then.</p>
+  </div>
+  <a class="ghost" href="/">Back to the desk</a>
+</header>
+
+<section class="below">
+  <div id="scoreBox">
+    <div class="score-hero">
+      <div>
+        <p class="k">No file uploaded</p>
+        <div class="big warn" style="font-size:48px">Upload data first</div>
+      </div>
+      <p>Go to the desk, submit a RAN file, then open this page again. A leftover file on disk is not used. <a class="ghost" href="/" style="margin-top:12px">Upload on the desk</a></p>
+    </div>
+  </div>
+  <div id="edpbBox" class="edpb"></div>
+
+  <h3>This file</h3>
+  <div id="fileAudit"><p class="hint">Upload data first.</p></div>
+
+  <h3>Measured results</h3>
+  <p class="hint" id="testHint">Upload data first.</p>
+  <table>
+    <thead><tr><th>Method</th><th>What we try</th><th>What we measured</th><th>Able to reach a person?</th></tr></thead>
+    <tbody id="testRows"><tr><td colspan="4">Upload data first.</td></tr></tbody>
+  </table>
+
+  <h3>Models on this desk</h3>
+  <p class="hint" id="ollamaHint">Checking Ollama on this Mac…</p>
+  <div id="modelRoster" class="roster"></div>
+
+  <h3>Prompt a model</h3>
+  <p class="hint">Mistral is the remote 675B desk model. Llama / Qwen / local Mistral-family models run on this Mac if Ollama is up. The model only sees cohort totals. Identifiers in the reply are stripped before they reach this page.</p>
+  <form id="probeForm" class="submit stack" style="margin:12px 0 16px">
+    <div class="row">
+      <label>Model <select id="model"></select></label>
+      <label>Method <select id="method"></select></label>
+      <button type="submit">Ask</button>
+    </div>
+    <label>Prompt
+      <textarea id="prompt" rows="4" placeholder="Ask the model to try to recover a subscriber from the cohort table."></textarea>
+    </label>
+  </form>
+  <p class="hint" id="llmScore">No try yet. The answer is shown in full below.</p>
+  <div id="probeCards"><p class="hint">No LLM answer yet.</p></div>
+  <table>
+    <thead><tr><th>Model</th><th>Where / size</th><th>Method</th><th>Able?</th><th>Answer</th></tr></thead>
+    <tbody id="probeRows"><tr><td colspan="5">No LLM try yet.</td></tr></tbody>
+  </table>
+</section>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmt = (n, d = 0) => (n == null ? "–" : Number(n).toLocaleString("en-GB", { maximumFractionDigits: d }));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ableBadge = (able) => able ? '<span class="tag bad">Yes</span>' : '<span class="tag ok">No</span>';
+const tone = (pct) => (pct >= 80 ? "ok" : pct >= 50 ? "warn" : "low");
+const probeLog = [];
+let edpbPct = null;
+let methodPrompts = {};
+
+function sizeLine(m) {
+  const bits = [m.where === "local" ? "Local" : "Remote"];
+  if (m.params) bits.push(m.params);
+  if (m.size_label) bits.push(m.size_label);
+  if (m.host) bits.push(m.host);
+  return bits.join(" · ");
+}
+
+const EDPB_COPY = {
+  no_record_isolation: { title: "Singling out", ok: "cleared", fail: "failed" },
+  no_linkage: { title: "Linkage", ok: "cleared", fail: "failed" },
+  no_inference: { title: "Inference", ok: "cleared", fail: "open risk" },
+};
+
+function renderScore(edpb, file) {
+  if (!edpb) return;
+  const cards = (edpb.criteria || []).map((c) => ({
+    ...c,
+    pass: c.id === "no_inference" ? false : c.pass,
+  }));
+  const identity = cards.filter((c) => c.id !== "no_inference");
+  const overall = identity.length ? Math.round(identity.reduce((s, c) => s + c.pct, 0) / identity.length) : 0;
+  edpbPct = overall;
+  const cls = tone(overall);
+  const notes = {
+    no_record_isolation: `Every group has at least ${file?.k ?? 100} people. Smallest group on this file: ${file?.min_people ?? "—"}.`,
+    no_linkage: "Phone, SIM, device and cell ids are not in the release.",
+    no_inference: `Example: the file says ${file?.min_people ?? 137} people in one region used video on 4G. If you already know someone is in that group, you know they used video.`,
+  };
+  $("scoreBox").innerHTML = `
+    <div class="score-hero">
+      <div>
+        <p class="k">EDPB 02/2026</p>
+        <div class="big ${cls}">${overall}%</div>
+      </div>
+      <p>Singling out and linkage are cleared. Inference is still an open risk.</p>
+    </div>`;
+  $("edpbBox").innerHTML = cards.map((c) => {
+    const meta = EDPB_COPY[c.id] || { title: c.title, ok: "cleared", fail: "open risk" };
+    const shown = c.id === "no_inference" ? "—" : `${c.pct}%`;
+    return `
+    <div class="stat ${c.pass ? "ok" : "warn"}">
+      <b>${shown}</b>
+      <span>${meta.title} · ${c.pass ? meta.ok : meta.fail}<br>${esc(notes[c.id] || c.note || "")}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderProbes() {
+  $("probeRows").innerHTML = probeLog.length
+    ? probeLog.map((p) => {
+        const where = [p.where === "local" ? "Local" : p.where === "remote" ? "Remote" : "", p.params, p.size_label].filter(Boolean).join(" · ");
+        const ans = esc(p.answer || p.preview || "");
+        return `<tr><td>${esc(p.model_label || p.model)}</td><td>${esc(where)}</td><td>${esc(p.method)}</td><td>${ableBadge(!!p.able)}</td><td>${esc(p.result)}<pre class="answer">${ans}</pre></td></tr>`;
+      }).join("")
+    : "<tr><td colspan=\"5\">No LLM try yet.</td></tr>";
+  $("probeCards").innerHTML = probeLog.length
+    ? probeLog.map((p) => `
+        <div class="stat ${p.able ? "warn" : "ok"}" style="margin:0 0 12px">
+          <b>${esc(p.model_label || p.model)} · ${p.able ? "reached a person" : "could not"}</b>
+          <span>${esc([p.where === "local" ? "Local" : "Remote", p.params, p.size_label, p.method].filter(Boolean).join(" · "))}<br>Prompt: ${esc(p.prompt || "")}</span>
+          <pre class="answer">${esc(p.answer || p.result || "")}</pre>
+        </div>`).join("")
+    : "<p class=\"hint\">No LLM answer yet.</p>";
+  if (!probeLog.length) return;
+  const good = probeLog.filter((p) => !p.error);
+  const n = good.length || probeLog.length;
+  const blocked = (good.length ? good : probeLog).filter((p) => !p.able).length;
+  const llmPct = Math.round(100 * blocked / n);
+  const blend = edpbPct == null ? llmPct : Math.round((edpbPct * 3 + llmPct) / 4);
+  $("llmScore").textContent = `${n} ${n === 1 ? "answer" : "answers"} shown · recovered a person: ${n - blocked} · models blocked ${llmPct}% · blended with EDPB: ${blend}%.`;
+}
+
+async function boot() {
+  const st = await fetch("/api/pipeline").then((r) => r.json()).catch(() => ({}));
+  $("probeForm").querySelector("button").disabled = !st.has_release;
+  if (!st.has_release) {
+    $("scoreBox").innerHTML = `
+      <div class="score-hero">
+        <div>
+          <p class="k">No file uploaded</p>
+          <div class="big warn" style="font-size:48px">Upload data first</div>
+        </div>
+        <p>Submit a RAN file on the desk, then open this page again. Nothing here is scored until you do. <a class="ghost" href="/" style="margin-top:12px">Upload on the desk</a></p>
+      </div>`;
+  }
+  const rel = await fetch("/api/release");
+  if (rel.ok) {
+    const m = await rel.json();
+    const a = m.audit || {};
+    const src = m.source || {};
+    $("fileAudit").innerHTML = `
+      <div class="grid2">
+        <div class="stat"><b>${fmt(src.rows)}</b><span>source rows · ${fmt(src.subscribers)} subscribers · ${fmt(src.cells)} cells</span></div>
+        <div class="stat ok"><b>k = ${m.k}</b><span>${(m.keys || []).join(" × ")}</span></div>
+        <div class="stat ok"><b>${fmt(a.min_people)}</b><span>smallest released group</span></div>
+        <div class="stat"><b>${fmt(a.cohorts)}</b><span>cohorts · ${fmt(a.retention_pct, 1)}% of rows kept</span></div>
+      </div>`;
+  }
+  const tests = await fetch("/api/anonymise/tests");
+  if (tests.ok) {
+    const t = await tests.json();
+    renderScore(t.edpb, t);
+    $("testHint").textContent = `File ${t.file || "—"} · k = ${t.k} · ${t.cohorts} cohorts · smallest group ${t.min_people}.`;
+    $("testRows").innerHTML = (t.results || []).map((r) => `<tr><td>${r.title}</td><td>${r.try}</td><td>${r.result}</td><td>${ableBadge(!r.pass)}</td></tr>`).join("");
+  }
+  const mods = await fetch("/api/anonymise/models").then((r) => r.json());
+  const o = mods.ollama || {};
+  $("ollamaHint").textContent = o.running
+    ? `Ollama is running locally at ${o.url} · ${o.count} model${o.count === 1 ? "" : "s"} on this Mac.`
+    : "Ollama is not running on this Mac. Mistral still works remotely if the desk key is set.";
+  $("modelRoster").innerHTML = (mods.models || []).map((m) => `
+    <div class="stat ${m.where === "local" ? "ok" : ""}">
+      <b>${esc(m.label)}</b>
+      <span>${esc(sizeLine(m))}</span>
+    </div>`).join("") || "<p class=\"hint\">No model configured.</p>";
+  $("model").innerHTML = (mods.models || []).map((m) => `<option value="${esc(m.id)}">${esc(m.label)} · ${esc(sizeLine(m))}</option>`).join("") || "<option>No model configured</option>";
+  (mods.methods || []).forEach((m) => { methodPrompts[m.id] = m.prompt; });
+  $("method").innerHTML = (mods.methods || []).map((m) => `<option value="${esc(m.id)}">${esc(m.title)}</option>`).join("");
+  $("prompt").value = methodPrompts[$("method").value] || "";
+}
+
+$("method").addEventListener("change", () => {
+  $("prompt").value = methodPrompts[$("method").value] || "";
+});
+
+$("probeForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const btn = e.target.querySelector("button");
+  btn.disabled = true;
+  btn.textContent = "Asking…";
+  const res = await fetch("/api/anonymise/probe", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: $("model").value,
+      method: $("method").value,
+      prompt: $("prompt").value,
+    }),
+  });
+  const j = await res.json();
+  btn.disabled = false;
+  btn.textContent = "Ask";
+  probeLog.unshift(j.error
+    ? { model: $("model").value, method: $("method").value, able: false, result: j.error, answer: j.error, prompt: $("prompt").value, error: true }
+    : j);
+  renderProbes();
+});
+
+boot();
+</script>
+</body>
+</html>

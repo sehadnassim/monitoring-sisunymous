@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Monitoring · SisuNymous</title>
+<meta http-equiv="Cache-Control" content="no-store" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@500;700&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<link rel="stylesheet" href="/styles.css?v=ui32" />
+</head>
+<body>
+<div class="chrome">
+<header>
+  <div>
+    <p class="k">Monitoring · SisuNymous</p>
+    <h1>RAN inefficiency</h1>
+    <p class="sub" id="window">Loading…</p>
+  </div>
+</header>
+
+<section class="pipeline" id="pipeline">
+  <div class="stage" data-stage="submit">
+    <span class="num">1</span>
+    <div>
+      <b>Submit RAN file</b>
+      <p class="hint" id="stageSubmit">Upload the RAN export. Nothing is ranked until you do.</p>
+      <form id="submitForm" class="submit">
+        <input type="file" id="file" accept=".parquet,.csv" required />
+        <button type="submit" id="submitBtn">Submit</button>
+      </form>
+    </div>
+  </div>
+  <span class="arrow">→</span>
+  <div class="stage" data-stage="deidentify">
+    <span class="num">2</span>
+    <div>
+      <b>Anonymise</b>
+      <p class="hint" id="stageDeid">Every published group has at least 100 people.</p>
+      <a class="ghost" id="auditBtn" href="/anonymise.html">Open anonymise</a>
+    </div>
+  </div>
+  <span class="arrow">→</span>
+  <div class="stage" data-stage="insights">
+    <span class="num">3</span>
+    <div>
+      <b>Rank</b>
+      <p class="hint" id="stageIns">RAN file × coverage map × traffic.</p>
+      <button class="ghost" id="sourcesBtn" type="button">Show sources</button>
+    </div>
+  </div>
+  <div class="load" id="load">
+    <div class="load-meta">
+      <span class="status" id="status">Submit a RAN file in step 1.</span>
+      <b id="loadPct"></b>
+    </div>
+    <div class="loadbar" aria-hidden="true"><i id="loadFill"></i></div>
+  </div>
+</section>
+
+</div>
+
+<section class="panel wide" id="audit" hidden></section>
+<section class="panel wide" id="sources" hidden></section>
+<section class="kpis" id="kpis" hidden></section>
+
+<nav class="lenses" id="lenses" aria-label="What to look at">
+  <button type="button" data-lens="service" class="on" aria-pressed="true">Video</button>
+  <button type="button" data-lens="energy" aria-pressed="false">Energy</button>
+  <button type="button" data-lens="coverage_check" aria-pressed="false">Coverage</button>
+  <button type="button" data-lens="mobility_lens" aria-pressed="false">Mobility</button>
+</nav>
+
+<main class="workspace" id="workspace">
+  <section class="panel rank">
+    <div class="panel-head"><h2>Regions</h2></div>
+    <ol id="ranked"></ol>
+  </section>
+
+  <section class="mapwrap">
+    <div class="map-hud">
+      <div class="panel-head">
+        <div>
+          <h2 id="lensTitle">Video</h2>
+          <p class="hint" id="lensQuestion"></p>
+        </div>
+        <div class="legend" id="mapLegend"></div>
+      </div>
+      <div class="layers" id="layers">
+        <label><input type="checkbox" data-layer="heat" checked /> inefficiency</label>
+        <label><input type="checkbox" data-layer="roads" checked /> cars</label>
+        <label><input type="checkbox" data-layer="trains" checked /> trains</label>
+        <label><input type="checkbox" data-layer="planned" /> planned</label>
+        <label><input type="checkbox" data-layer="samples" /> towns</label>
+      </div>
+      <div class="clockbar" id="clockbar" hidden>
+        <button type="button" id="playBtn">Play</button>
+        <div class="scrub">
+          <div class="ticks" id="timeTicks"></div>
+          <input type="range" id="timeScrub" min="0" max="0" step="0.02" value="0" />
+        </div>
+        <b id="timeNow">—</b>
+      </div>
+    </div>
+    <div id="map" role="application" aria-label="OpenStreetMap"></div>
+    <div class="map-foot">
+      <div class="score-key" id="lensHow"></div>
+      <div class="dots-legend">
+        <span><i class="glow"></i> Red = inefficiency</span>
+        <span><i class="shape sq traffic"></i> Road traffic</span>
+        <span><i class="shape dia train"></i> Station</span>
+        <span><i class="mk-leg train">▶</i> Live train</span>
+      </div>
+    </div>
+  </section>
+
+  <aside class="dock" id="dock">
+    <section id="chat" class="sisu" aria-label="SisuNymous chat">
+      <div id="chatPanel" class="sisu-panel">
+        <header>
+          <span class="sisu-ava">S</span>
+          <div class="sisu-who">
+            <b>SisuNymous</b>
+            <span id="callStatus">RAN analyst</span>
+          </div>
+          <button type="button" id="callBtn" class="call-opt">Call</button>
+          <button type="button" id="chatMin" class="sisu-min" aria-expanded="true">Minimize</button>
+        </header>
+        <div id="chatLog"></div>
+        <div class="chat-suggest" id="chatSuggest">
+          <button type="button" data-q="Why do I need to submit a RAN file first?">Why submit?</button>
+          <button type="button" data-q="Which region is most inefficient for video, and what should we do?">Video</button>
+          <button type="button" data-q="Where are radios wasting energy?">Energy</button>
+          <button type="button" data-q="Explain the selected region and give one RAN action.">This region</button>
+        </div>
+        <form id="chatForm">
+          <input id="chatInput" type="text" autocomplete="off" placeholder="Ask about a region…" />
+          <button type="submit">Send</button>
+        </form>
+      </div>
+    </section>
+  </aside>
+</main>
+<section class="below" id="detail">
+  <p class="hint">Click a region, then scroll down.</p>
+</section>
+<div id="tip" class="tip" hidden></div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="/app.js?v=ui23"></script>
+</body>
+</html>
