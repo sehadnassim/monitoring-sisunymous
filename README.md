@@ -36,11 +36,15 @@ Standard k-anonymity counts people with a non-null value. On telecom usage data 
 
 Only 3,388 subscribers in the whole file ever used video. A cohort can clear the 100-person bar while its mean is carried by a handful of real users. The published mean, multiplied by the public row count, can reconstruct those few people’s usage. The check reports the cohort as safe. It is not. The nonzero-support gate is the fix.
 
+![The old rule counted non-null people, so it could not see sparse fields](docs/figures/fig1_sparsity_blind_spot.png)
+
 ## Validation
 
 Every design choice was treated as a hypothesis to test. The attacker code reads the source in memory only to compute ground truth, writes no identifier-bearing files, and outputs only aggregate statistics.
 
 **Tier 1, singling out.** Can an attacker isolate one subscriber from quasi-identifiers? In the source, 8.167% of rows can be singled out under a “time plus cell plus application plus network” signature. In the release this is 0%. The smallest group contains 124 subscribers.
+
+![Singling-out is blocked by construction](docs/figures/fig3_singling_out.png)
 
 **Tier 2, attribute inference.** Suppose the attacker already knows which cohort the victim belongs to, and guesses the published mean as the victim’s value. Hit rate is the share of guesses within a relative error of the true value, compared with guessing the global mean. Near baseline means the release adds little inference power. Far above baseline means the field is leaking.
 
@@ -49,6 +53,8 @@ Every design choice was treated as a hypothesis to test. The attacker code reads
 ## Results
 
 Before the gate, an attacker guessing the mean of a sparse field hit the true value in about 79% of cases, because so many cohort means were exactly 0. After the gate, the hit rate on those fields falls to random guessing.
+
+![Where the release helped the attacker, and where the rule closed it](docs/figures/fig2_attack_hit_rate.png)
 
 | Field | Hit rate at ±10%, before → after (baseline) |
 |---|---|
@@ -62,13 +68,21 @@ After the rule, no released field sits more than 7 percentage points above its b
 
 Network-quality metrics such as latency, retransmission, and RTT carry very little privacy cost (hit rates within 7 points of baseline). They describe the network rather than a person. The fields that need care are the sparse behavioural ones (video, audio) and the sparse quality field HTTP response time.
 
+![Privacy cost per field](docs/figures/fig5_field_privacy_cost.png)
+
 ### The cost
 
+![The rule keeps video in 6 of 538 cohorts and audio in 18](docs/figures/fig4_rule_cost.png)
+
 Closing the leak is not free. The main casualty is 2G. Only 0.3% of rows are 2G, and 83.2% of their throughput values are zero, so most 2G province slices cannot supply 100 nonzero contributors. Six provinces are merged into “Other provinces” for 2G, so **2G can no longer be read at province level**. The worst single-slice error rises from 0.154% to 50.36%.
+
+![What pooling 2G costs: six provinces now share one value](docs/figures/fig7_2g_pooling.png)
 
 One acceptance metric, overlap of the ten lowest-throughput regions, returns to 10/10 after pooling partly because the merged slices all sink to the bottom together. A metric passing is not the same as a problem being solved.
 
 ### Privacy and utility by k
+
+![Raising k lowers the worst-cohort hit rate but the worst-slice error rises](docs/figures/fig6_tradeoff_by_k.png)
 
 | | k=5 | k=20 | k=100 (shipped) |
 |---|---|---|---|
